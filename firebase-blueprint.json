@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "vendor", "mechanic", "customer"] }
+      },
+      "required": ["name", "email", "role"]
+    },
+    "VendorProfile": {
+      "title": "Vendor Profile",
+      "description": "Vendor details",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string" },
+        "approved": { "type": "boolean" },
+        "userIdEmail": { "type": "string" },
+        "userIdName": { "type": "string" }
+      },
+      "required": ["businessName", "approved"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "Service offered",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "images": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["vendorId", "title", "price"]
+    },
+    "MechanicProfile": {
+      "title": "Mechanic Profile",
+      "description": "Mechanic details",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "earnings": { "type": "number" },
+        "userIdEmail": { "type": "string" },
+        "userIdName": { "type": "string" }
+      },
+      "required": ["vendorId", "earnings"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Booking request",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "vendorId": { "type": "string" },
+        "mechanicId": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "in-progress", "completed"] },
+        "time": { "type": "string" },
+        "customerName": { "type": "string" },
+        "vendorBusinessName": { "type": "string" },
+        "serviceTitle": { "type": "string" },
+        "mechanicName": { "type": "string" },
+        "servicePrice": { "type": "number" }
+      },
+      "required": ["customerId", "vendorId", "serviceId", "status", "customerName", "vendorBusinessName", "serviceTitle", "servicePrice"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile"
+    },
+    "/vendors/{userId}": {
+      "schema": { "$ref": "#/entities/VendorProfile" },
+      "description": "Vendor specific details"
+    },
+    "/mechanics/{userId}": {
+      "schema": { "$ref": "#/entities/MechanicProfile" },
+      "description": "Mechanic specific details"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" },
+      "description": "Vendor services"
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Bookings"
+    }
+  }
+}

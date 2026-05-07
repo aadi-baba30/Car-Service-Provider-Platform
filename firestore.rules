@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'email', 'role']) && data.keys().size() == 3
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 100
+        && data.role is string && data.role in ['admin', 'vendor', 'mechanic', 'customer'];
+    }
+
+    function isValidVendor(data) {
+      return data.keys().hasAll(['businessName', 'approved', 'userIdEmail', 'userIdName']) && data.keys().size() == 4
+        && data.businessName is string && data.businessName.size() > 0 && data.businessName.size() <= 100
+        && data.approved is bool
+        && data.userIdEmail is string && data.userIdEmail.size() > 0 && data.userIdEmail.size() <= 100
+        && data.userIdName is string && data.userIdName.size() > 0 && data.userIdName.size() <= 100;
+    }
+
+    function isValidService(data) {
+      return data.keys().hasAll(['vendorId', 'title', 'price']) && data.keys().size() >= 3 && data.keys().size() <= 5
+        && data.vendorId is string && data.vendorId.size() > 0 && data.vendorId.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 100
+        && data.price is number && data.price >= 0
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+        && (!('images' in data) || (data.images is list && data.images.size() <= 5 && data.images.size() > 0 && data.images[0] is string));
+    }
+
+    function isValidMechanic(data) {
+      return data.keys().hasAll(['vendorId', 'earnings', 'userIdEmail', 'userIdName']) && data.keys().size() == 4
+        && data.vendorId is string && data.vendorId.size() > 0 && data.vendorId.size() <= 128
+        && data.earnings is number && data.earnings >= 0
+        && data.userIdEmail is string && data.userIdEmail.size() > 0 && data.userIdEmail.size() <= 100
+        && data.userIdName is string && data.userIdName.size() > 0 && data.userIdName.size() <= 100;
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['customerId', 'vendorId', 'serviceId', 'status', 'customerName', 'vendorBusinessName', 'serviceTitle', 'servicePrice']) && data.keys().size() >= 8 && data.keys().size() <= 22
+        && data.customerId is string && data.customerId.size() > 0 && data.customerId.size() <= 128
+        && data.vendorId is string && data.vendorId.size() > 0 && data.vendorId.size() <= 128
+        && data.serviceId is string && data.serviceId.size() > 0 && data.serviceId.size() <= 128
+        && data.status is string && data.status in ['pending', 'accepted', 'rejected', 'in-progress', 'completed', 'assigned', 'mechanic_completed', 'payment_pending', 'awaiting_cash']
+        && (!('time' in data) || (data.time is string && data.time.size() <= 50))
+        && (!('mechanicId' in data) || (data.mechanicId is string && data.mechanicId.size() <= 128))
+        && (!('mechanicName' in data) || (data.mechanicName is string && data.mechanicName.size() <= 100))
+        && (!('carMake' in data) || (data.carMake is string && data.carMake.size() <= 100))
+        && (!('carModel' in data) || (data.carModel is string && data.carModel.size() <= 100))
+        && (!('carReg' in data) || (data.carReg is string && data.carReg.size() <= 100))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 100))
+        && (!('additionalCharge' in data) || (data.additionalCharge is number && data.additionalCharge >= 0))
+        && (!('additionalDetails' in data) || (data.additionalDetails is string && data.additionalDetails.size() <= 500))
+        && (!('totalAmount' in data) || (data.totalAmount is number && data.totalAmount >= 0))
+        && (!('paymentMode' in data) || (data.paymentMode is string && data.paymentMode in ['online', 'cash']))
+        && (!('laborCost' in data) || (data.laborCost is number && data.laborCost >= 0))
+        && (!('billDetails' in data) || (data.billDetails is list))
+        && (!('finalServicePrice' in data) || (data.finalServicePrice is number && data.finalServicePrice >= 0))
+        && data.customerName is string && data.customerName.size() > 0 && data.customerName.size() <= 100
+        && data.vendorBusinessName is string && data.vendorBusinessName.size() > 0 && data.vendorBusinessName.size() <= 100
+        && data.serviceTitle is string && data.serviceTitle.size() > 0 && data.serviceTitle.size() <= 100
+        && data.servicePrice is number && data.servicePrice >= 0;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
+        request.auth.uid == userId ||
+        (incoming().role == 'mechanic' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'vendor')
+      );
+      // No updates to roles using standard client SDK. Admins only can modify roles? Users can't update.
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && incoming().role == existing().role
+                       && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email']);
+    }
+
+    match /vendors/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidVendor(incoming()) && incoming().approved == false && exists(/databases/$(database)/documents/users/$(userId)) && get(/databases/$(database)/documents/users/$(userId)).data.role == 'vendor';
+      allow update: if isSignedIn() && isValidVendor(incoming()) && (
+        isAdmin() ||
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['businessName', 'userIdEmail', 'userIdName']))
+      );
+    }
+
+    match /services/{serviceId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(serviceId) && isValidService(incoming()) && incoming().vendorId == request.auth.uid;
+      allow update: if isSignedIn() && isValidService(incoming()) && existing().vendorId == request.auth.uid && incoming().vendorId == existing().vendorId;
+      allow delete: if isSignedIn() && isValidId(serviceId) && existing().vendorId == request.auth.uid;
+    }
+
+    match /mechanics/{userId} {
+      allow read: if isSignedIn();
+      // Only a vendor can create a mechanic profile currently.
+      allow create: if isSignedIn() && isValidId(userId) && isValidMechanic(incoming()) && incoming().earnings == 0 && exists(/databases/$(database)/documents/users/$(userId)) && get(/databases/$(database)/documents/users/$(userId)).data.role == 'mechanic' && incoming().vendorId == request.auth.uid;
+      allow update: if isSignedIn() && isValidMechanic(incoming()) && (
+        (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['userIdEmail', 'userIdName'])) ||
+        (existing().vendorId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['earnings', 'vendorId']))
+      );
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid ||
+        resource.data.vendorId == request.auth.uid ||
+        resource.data.mechanicId == request.auth.uid
+      );
+      allow create: if isSignedIn() && isValidId(bookingId) && isValidBooking(incoming()) && incoming().customerId == request.auth.uid && incoming().status == 'pending';
+      allow update: if isSignedIn() && isValidBooking(incoming()) && incoming().customerId == existing().customerId && incoming().vendorId == existing().vendorId && incoming().serviceId == existing().serviceId && (
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'time', 'mechanicId', 'mechanicName', 'totalAmount', 'billDetails', 'laborCost', 'finalServicePrice']) && existing().vendorId == request.auth.uid) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paymentMode']) && existing().customerId == request.auth.uid) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'additionalDetails']) && existing().mechanicId == request.auth.uid)
+      );
+    }
+    
+    match /customer_profiles/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+  }
+}
